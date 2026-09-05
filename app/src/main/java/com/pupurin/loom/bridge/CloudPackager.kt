@@ -71,15 +71,50 @@ class CloudPackager(private val context: Context) {
         }
 
         try {
-            // 2) 上传
-            val jobId = upload(base, zipFile, platform, opts)
+            // 2) 上传（对瞬时网络/隧道错误自动重试，避免 DNS 抖动误报失败）
+            var jobId: String? = null
+            var uploadErr: Exception? = null
+            for (attempt in 1..3) {
+                try {
+                    jobId = upload(base, zipFile, platform, opts)
+                    break
+                } catch (e: Exception) {
+                    uploadErr = e
+                    if (attempt < 3) {
+                        logs.add("上传网络抖动（${e.message}），自动重试 $attempt/3……")
+                        Thread.sleep(2000L * attempt)
+                    }
+                }
+            }
+            if (jobId == null) {
+                return mapOf(
+                    "logs" to (logs + "错误：上传失败：${uploadErr?.message}"),
+                    "error" to (uploadErr?.message ?: "上传失败")
+                )
+            }
             logs.add("上传成功，作业 ID：$jobId")
             logs.add("服务器开始打包……")
 
-            // 3) 轮询
+            // 3) 轮询（对瞬时网络错误自动重试，避免 DNS/隧道抖动被误判为打包失败）
             val deadline = System.currentTimeMillis() + MAX_POLL_MS
+            val maxPollFailures = 8
+            var pollFailures = 0
             while (true) {
-                val status = query(base, jobId)
+                val status = try {
+                    query(base, jobId)
+                } catch (e: Exception) {
+                    pollFailures++
+                    if (pollFailures >= maxPollFailures || System.currentTimeMillis() > deadline) {
+                        return mapOf(
+                            "logs" to (logs + "错误：连接打包服务器失败：${e.message}"),
+                            "error" to (e.message ?: "连接打包服务器失败")
+                        )
+                    }
+                    logs.add("网络抖动（${e.message}），$pollFailures/$maxPollFailures 次，正在重试……")
+                    Thread.sleep(POLL_INTERVAL_MS)
+                    continue
+                }
+                pollFailures = 0
                 // 追加新日志（去重）
                 status.logs.forEach { if (it !in logs) logs.add(it) }
                 when (status.state) {
@@ -158,22 +193,31 @@ class CloudPackager(private val context: Context) {
         )
     }
 
-    /** 把服务器返回的文件 URL 下载到本地 dest。 */
+    /** 把服务器返回的文件 URL 下载到本地 dest（对瞬时网络错误重试 3 次）。 */
     private fun download(urlStr: String, dest: File): File {
         dest.parentFile?.mkdirs()
-        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 15000
-            readTimeout = 30000
-        }
-        return try {
-            conn.inputStream.use { ins ->
-                FileOutputStream(dest).use { out -> ins.copyTo(out) }
+        var lastErr: Exception? = null
+        for (attempt in 1..3) {
+            try {
+                val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                }
+                return try {
+                    conn.inputStream.use { ins ->
+                        FileOutputStream(dest).use { out -> ins.copyTo(out) }
+                    }
+                    dest
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (e: Exception) {
+                lastErr = e
+                if (attempt < 3) Thread.sleep(2000L * attempt)
             }
-            dest
-        } finally {
-            conn.disconnect()
         }
+        throw lastErr ?: Exception("下载失败")
     }
 
     private fun upload(base: String, zipFile: File, platform: String, opts: Map<String, Any>): String {
