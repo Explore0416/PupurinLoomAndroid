@@ -1,0 +1,15 @@
+# 统一行尾，避免脚本（gradlew / *.sh）在 Windows 检出时被转成 CRLF 导致构建失败
+* text=auto
+
+# 可执行脚本与 wrapper 一律使用 LF
+gradlew text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+
+# 二进制文件不作为文本处理
+*.apk binary
+*.png binary
+*.jpg binary
+*.ttf binary
+*.woff binary
+*.zip binary

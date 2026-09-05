@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 用于安装「已导出的 Ren'Py 游戏 APK」（API 26+ 需用户授权） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 把项目等用户数据写到公共共享目录 /storage/emulated/0/PupurinLoom/ -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+
+    <!-- 让安装后能定位并启动目标游戏（提供包可见性，避免 API 30+ 过滤掉可启动应用） -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
+        android:requestLegacyExternalStorage="true"
+        android:hardwareAccelerated="true"
+        android:theme="@style/Theme.PupurinLoom"
+        tools:targetApi="24">
+
+        <!--
+          横竖屏 / 多尺寸 / 小米自由窗口(无极缩放) 的关键配置：
+          - screenOrientation="unspecified"  允许随设备旋转切换横竖屏
+          - configChanges 包含 orientation/screenSize/smallestScreenSize/density 等，
+            使旋转与窗口缩放时不重建 Activity，由 WebView 自适应
+          - resizeableActivity="true"        声明支持分屏/自由窗口(Freeform)，小米可无极缩放
+          - launchMode="singleTask"          避免重复实例
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="unspecified"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale|locale|layoutDirection"
+            android:windowSoftInputMode="adjustResize"
+            tools:ignore="DiscouragedApi">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 内嵌 Ren'Py 引擎运行宿主（骨架：引擎就位后在此初始化 SDL/Ren'Py 引导） -->
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale|locale|layoutDirection" />
+
+        <!-- 通过 FileProvider 向系统安装器共享 APK 文件 URI -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+</manifest>

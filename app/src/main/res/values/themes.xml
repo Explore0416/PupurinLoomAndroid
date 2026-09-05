@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 无 ActionBar 深色主题，避免加载瞬间白屏，交给 WebView 渲染 -->
+    <style name="Theme.PupurinLoom" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/loom_bg</item>
+        <item name="android:statusBarColor">@color/loom_bg</item>
+        <item name="android:navigationBarColor">@color/loom_bg</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="27">shortEdges</item>
+    </style>
+</resources>

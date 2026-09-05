@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色 IDE 主色调：与桌面版 loom 色板对齐 -->
+    <color name="loom_bg">#1F1D1A</color>
+    <color name="loom_text">#F0EAD6</color>
+    <color name="loom_accent">#FFE4A6</color>
+    <color name="white">#FFFFFF</color>
+</resources>

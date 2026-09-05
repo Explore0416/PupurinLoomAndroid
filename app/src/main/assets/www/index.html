@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>铃言织机° · Pupurin° Loom</title>
+    <script type="module" crossorigin src="./assets/index-D3PfY8gi.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/xyflow-D7BwyjEn.js">
+    <link rel="modulepreload" crossorigin href="./assets/monaco-BYShpLcS.js">
+    <link rel="stylesheet" crossorigin href="./assets/monaco-BEepC2D7.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-D-eQqGrH.css">
+    <style>
+      /* 铃言织机° 竖屏窄屏适配（打包前端无源码，故用全局安全覆盖）
+         目标：手机竖屏下不横向溢出、文字不撑爆宽度。仅在窄竖屏生效。 */
+      @media (max-width: 860px) and (orientation: portrait) {
+        html, body, #root {
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          overflow-x: hidden !important;
+        }
+        *,
+        *::before,
+        *::after { box-sizing: border-box !important; }
+        /* 允许弹性子项收缩到内容宽度以内，避免把整页撑宽 */
+        * { min-width: 0 !important; }
+        /* 长文本（中文 / 长单词）自动换行，不再溢出容器 */
+        * { overflow-wrap: anywhere !important; }
+        /* 代码编辑器 / 流程画布等自管理宽度组件：不撑开整页 */
+        .monaco-editor,
+        .monaco-editor-background,
+        .react-flow,
+        .react-flow__pane,
+        .react-flow__renderer,
+        .xyflow { width: 100% !important; max-width: 100% !important; }
+        /* 编辑器内部保持等宽、不换行，避免破坏代码排版 */
+        .monaco-editor *,
+        .monaco-editor-background *,
+        textarea,
+        pre,
+        code { overflow-wrap: normal !important; overflow: auto !important; }
+        /* 顶部操作条等常见工具条：允许换行、稍减字号 */
+        header,
+        nav,
+        [class*="toolbar"],
+        [class*="menu-bar"],
+        [role="toolbar"] { flex-wrap: wrap !important; font-size: 13px !important; }
+        input,
+        select { font-size: 16px !important; }
+      }
+    </style>
+  </head>
+  <body class="bg-loom-bg text-loom-text">
+    <div id="root"></div>
+  </body>
+</html>

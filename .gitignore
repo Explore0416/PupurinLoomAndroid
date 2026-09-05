@@ -1,0 +1,26 @@
+# Gradle / Android 构建产物
+.gradle/
+build/
+app/build/
+captures/
+
+# 本机配置（含本机 SDK 路径，不入库）
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 构建产物 APK / 安装包
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 运行时生成
+*.tmp
