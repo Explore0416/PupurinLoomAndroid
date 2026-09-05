@@ -91,6 +91,14 @@
     // 返回已配置的服务器地址；为空则在原生层弹输入框让用户填写并保存
     ensureCloudServer: function () { return ensureCloudServer() },
 
+    // 云端打包设置：查询当前渠道(official|custom) 与自建地址
+    getCloudServerSettings: function () { return call('getCloudServerSettings', []) },
+    setCloudServerSettings: function (mode, customUrl) {
+      return call('setCloudServerSettings', [mode, customUrl])
+    },
+    // 打开原生「云端打包设置」对话框（官方打包 / 自建服务器 + 地址），返回当前生效地址
+    openCloudServerSettings: function () { return call('openCloudServerSettings', []) },
+
     // 运行已导出的游戏（APK）与内嵌引擎探测
     hasRenpyEngine: function () { return call('hasRenpyEngine', []) },
     engineInfo: function () { return call('engineInfo', []) },

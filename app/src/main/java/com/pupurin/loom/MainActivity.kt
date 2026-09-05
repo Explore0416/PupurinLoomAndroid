@@ -391,6 +391,9 @@ class MainActivity : ComponentActivity() {
                 "checkUpdate" -> mapOf("configured" to false, "current" to VERSION)
                 "getCloudServer" -> mapOf("url" to cloudServer(), "official" to CloudPackager.OFFICIAL_SERVER_URL)
                 "setCloudServer" -> { setCloudServerUrl(args.strOrThrow(0)); null }
+                "getCloudServerSettings" -> cloudServerSettings()
+                "setCloudServerSettings" -> { setCloudServerSettings(args.strOrNull(0) ?: "official", args.strOrNull(1) ?: ""); null }
+                "openCloudServerSettings" -> promptCloudServer(null)
                 "testCloudServer" -> cloudPackager.test(cloudServer())
                 "promptCloudServer" -> promptCloudServer(args.strOrNull(0))
                 "pickDirectory" -> null // 公共共享目录 PupurinLoom/projects 由应用托管，无需用户选路径
@@ -582,40 +585,93 @@ class MainActivity : ComponentActivity() {
     // ---- 云端打包 / 运行 ----
 
     private fun cloudServer(): String {
-        val s = loadSettings()["cloudServerUrl"] as? String
-        return s?.trim()?.takeIf { it.isNotEmpty() } ?: CloudPackager.OFFICIAL_SERVER_URL
+        val s = loadSettings()
+        val mode = s["cloudServerMode"] as? String
+        if (mode == "custom") {
+            val url = s["cloudServerUrl"] as? String
+            if (!url.isNullOrBlank()) return url.trim()
+        }
+        return CloudPackager.OFFICIAL_SERVER_URL
     }
 
     private fun setCloudServerUrl(url: String) {
         val map = loadSettings().toMutableMap()
-        if (url.isBlank()) map.remove("cloudServerUrl") else map["cloudServerUrl"] = url.trim()
+        if (url.isBlank()) {
+            map.remove("cloudServerUrl")
+            map.remove("cloudServerMode") // 回到官方打包
+        } else {
+            map["cloudServerUrl"] = url.trim()
+            map["cloudServerMode"] = "custom" // 填了自建地址即切换为自建服务器
+        }
         saveSettings(map)
     }
 
-    /** 弹系统输入框让用户填写云端打包服务器地址（bridge.js 在打包前调用）。 */
+    /** 云端打包设置：mode = official|custom；customUrl 为自建服务器地址。 */
+    private fun setCloudServerSettings(mode: String, customUrl: String) {
+        val m = if (mode == "custom") "custom" else "official"
+        val map = loadSettings().toMutableMap()
+        if (m == "custom") map["cloudServerMode"] = "custom" else map.remove("cloudServerMode")
+        if (customUrl.isBlank()) map.remove("cloudServerUrl") else map["cloudServerUrl"] = customUrl.trim()
+        saveSettings(map)
+    }
+
+    private fun cloudServerSettings(): Map<String, Any> {
+        val s = loadSettings()
+        return mapOf(
+            "mode" to (if ((s["cloudServerMode"] as? String) == "custom") "custom" else "official"),
+            "customUrl" to (s["cloudServerUrl"] as? String ?: ""),
+            "official" to CloudPackager.OFFICIAL_SERVER_URL,
+            "active" to cloudServer()
+        )
+    }
+
+    /** 弹系统对话框让用户配置云端打包渠道：官方打包 / 自建服务器 + 自建地址（持久化保存）。 */
     private fun promptCloudServer(defaultUrl: String?): String {
         val holder = java.util.concurrent.atomic.AtomicReference<String?>()
+        val modeRef = java.util.concurrent.atomic.AtomicReference<String?>()
         val latch = java.util.concurrent.CountDownLatch(1)
+        val current = cloudServerSettings()
         runOnUiThread {
-            val input = android.widget.EditText(this).apply {
-                setText(defaultUrl ?: "")
-                hint = "https://build.example.com"
+            val urlInput = android.widget.EditText(this).apply {
+                setText((defaultUrl ?: current["customUrl"] as? String) ?: "")
+                hint = CloudPackager.OFFICIAL_SERVER_URL
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or
                     android.text.InputType.TYPE_TEXT_VARIATION_URI
             }
+            val radioOfficial = android.widget.RadioButton(this).apply {
+                text = "使用官方打包服务器（${CloudPackager.OFFICIAL_SERVER_URL}）"
+                isChecked = current["mode"] != "custom"
+            }
+            val radioCustom = android.widget.RadioButton(this).apply {
+                text = "使用自建打包服务器"
+                isChecked = current["mode"] == "custom"
+            }
+            val group = android.widget.RadioGroup(this).apply { addView(radioOfficial); addView(radioCustom) }
+            val content = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(24, 8, 24, 0)
+                addView(group)
+                addView(urlInput)
+            }
             android.app.AlertDialog.Builder(this)
-                .setTitle("配置云端打包服务器")
-                .setMessage("打包将在你的服务器上完成。请输入打包服务地址（带 https://），或取消使用占位。")
-                .setView(input)
-                .setPositiveButton("保存") { _, _ -> holder.set(input.text.toString().trim()) }
+                .setTitle("云端打包设置")
+                .setMessage("打包在服务器上进行。默认使用官方服务器；如需自建，请选择自建并填入地址（带 https://）。")
+                .setView(content)
+                .setPositiveButton("保存") { _, _ ->
+                    val mode = if (radioCustom.isChecked) "custom" else "official"
+                    modeRef.set(mode)
+                    val url = urlInput.text.toString().trim()
+                    holder.set(if (mode == "custom" && url.isNotEmpty()) url else null)
+                }
                 .setNegativeButton("取消", null)
                 .setOnDismissListener { latch.countDown() }
                 .show()
         }
         try { latch.await() } catch (_: InterruptedException) { /* ignore */ }
+        val mode = modeRef.get() ?: return ""
         val url = holder.get().orEmpty()
-        if (url.isNotEmpty()) setCloudServerUrl(url)
-        return url
+        setCloudServerSettings(mode, url)
+        return if (mode == "custom" && url.isNotEmpty()) url else cloudServer()
     }
 
     private fun startRun(projectPath: String, filePath: String?, line: String?): Map<String, Any> {

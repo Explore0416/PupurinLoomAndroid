@@ -1,6 +1,7 @@
 package com.pupurin.loom.bridge
 
 import android.content.Context
+import com.pupurin.loom.SharedStorage
 import java.io.BufferedOutputStream
 import java.io.DataOutputStream
 import java.io.File
@@ -84,7 +85,7 @@ class CloudPackager(private val context: Context) {
                 when (status.state) {
                     "done" -> {
                         logs.add("打包完成！")
-                        return finalResult(status, logs)
+                        return finalResult(status, logs, root.name)
                     }
                     "error" -> {
                         return mapOf(
@@ -129,19 +130,50 @@ class CloudPackager(private val context: Context) {
 
     private data class JobStatus(val state: String, val logs: List<String>, val files: List<Pair<String, String>>, val error: String?)
 
-    private fun finalResult(status: JobStatus, logs: List<String>): Map<String, Any?> {
-        val firstApk = status.files.firstOrNull { it.first.endsWith(".apk") }?.second
-        val firstZip = status.files.firstOrNull { it.first.endsWith(".zip") }?.second
-        val web = status.files.firstOrNull { it.first.endsWith(".zip") && it.first.contains("web", true) }?.second
-        val downloadUrl = firstApk ?: web ?: firstZip
+    private fun finalResult(status: JobStatus, logs: List<String>, projectName: String): Map<String, Any?> {
+        // 把云端的每个产物下载到公共共享目录 /storage/emulated/0/PupurinLoom/builds/<项目名>/
+        // 这样用户能在文件管理器 / 电脑上直接访问、安装、备份打包结果。
+        val destDir = SharedStorage.buildsDir().resolve(projectName).apply { mkdirs() }
+        val localFiles = status.files.map { (name, url) ->
+            val safeName = File(name).name.ifBlank { "output-${System.currentTimeMillis()}.bin" }
+            val local = try {
+                download(url, File(destDir, safeName))
+            } catch (e: Exception) {
+                null
+            }
+            mapOf("name" to name, "url" to url, "path" to (local?.absolutePath))
+        }.filter { it["path"] != null }
+
+        val firstApk = localFiles.firstOrNull { (it["name"] as String).endsWith(".apk") }
+        val webZip = localFiles.firstOrNull { (it["name"] as String).endsWith(".zip") && it["name"].toString().contains("web", true) }
+        val anyZip = localFiles.firstOrNull { (it["name"] as String).endsWith(".zip") }
+
         return mapOf(
-            "logs" to logs,
-            "buildsDir" to null,
-            "webDir" to if (web != null) mapOf("downloadUrl" to web) else null,
-            "outDir" to if (firstApk != null) mapOf("downloadUrl" to firstApk) else null,
-            "downloadUrl" to downloadUrl,
-            "files" to status.files.map { mapOf("name" to it.first, "url" to it.second) }
+            "logs" to (logs + "已保存到共享目录：${destDir.absolutePath}"),
+            "buildsDir" to destDir.absolutePath,
+            "webDir" to if (webZip != null) destDir.absolutePath else null,
+            "outDir" to (firstApk?.get("path") ?: anyZip?.get("path") ?: if (localFiles.isNotEmpty()) destDir.absolutePath else null),
+            "downloadUrl" to (firstApk?.get("path") ?: anyZip?.get("path") ?: emptyList<Any>()),
+            "files" to localFiles
         )
+    }
+
+    /** 把服务器返回的文件 URL 下载到本地 dest。 */
+    private fun download(urlStr: String, dest: File): File {
+        dest.parentFile?.mkdirs()
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15000
+            readTimeout = 30000
+        }
+        return try {
+            conn.inputStream.use { ins ->
+                FileOutputStream(dest).use { it.writeBytes(ins.readBytes()) }
+            }
+            dest
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun upload(base: String, zipFile: File, platform: String, opts: Map<String, Any>): String {

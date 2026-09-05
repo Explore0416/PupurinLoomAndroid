@@ -31,6 +31,9 @@ object SharedStorage {
 
     fun projectsDir(): File = File(rootDir(), "projects").apply { mkdirs() }
 
+    /** 云端打包产物输出目录（共享）：/storage/emulated/0/PupurinLoom/builds/<项目名>/ */
+    fun buildsDir(): File = File(rootDir(), "builds").apply { mkdirs() }
+
     /**
      * 当前是否已具备写入公共共享目录的权限。
      * - API 30+：要求「所有文件访问」（MANAGE_EXTERNAL_STORAGE）
