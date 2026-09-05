@@ -168,7 +168,7 @@ class CloudPackager(private val context: Context) {
         }
         return try {
             conn.inputStream.use { ins ->
-                FileOutputStream(dest).use { it.writeBytes(ins.readBytes()) }
+                FileOutputStream(dest).use { out -> ins.copyTo(out) }
             }
             dest
         } finally {
