@@ -18,7 +18,20 @@ class FsStore(private val context: Context) {
 
     private fun resolve(projectPath: String, sub: String): File {
         val base = File(projectPath, "game")
-        return if (sub.isEmpty()) base else File(base, sub).canonicalFile
+        if (sub.isEmpty()) return base
+        // 容错：合并 <名字>/<同名>（如 font/font.ttf）这类重复段，避免「找不到文件」的裸 ENOENT
+        val parts = sub.trim('/').split('/').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return base
+        val collapsed = buildString {
+            var last: String? = null
+            for (p in parts) {
+                if (p == last) continue // 连续重复段只保留一个
+                if (isNotEmpty()) append('/')
+                append(p)
+                last = p
+            }
+        }
+        return File(base, collapsed).canonicalFile
     }
 
     private fun combine(dir: String, name: String): String =

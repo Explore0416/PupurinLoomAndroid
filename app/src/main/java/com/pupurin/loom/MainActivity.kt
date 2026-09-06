@@ -227,13 +227,24 @@ class MainActivity : ComponentActivity() {
         return dest.absolutePath
     }
 
-    private fun copyDocumentTree(src: DocumentFile, dest: File) {
+    private fun copyDocumentTree(
+        src: DocumentFile,
+        dest: File,
+        visited: MutableSet<String> = java.util.HashSet()
+    ) {
         if (src.isDirectory) {
             dest.mkdirs()
+            // 环/自引用防护：部分 SAF 提供者会把“根/自身”也作为子节点返回，
+            // 若不拦截会把同一目录无限递归、拷贝成 <名字>/<同名>（如 font/font.ttf）再误报 ENOENT。
+            val srcKey = src.name + "\u0000" + src.uri
+            if (!visited.add(srcKey)) return
+            val parentName = dest.name
             for (child in src.listFiles()) {
                 val name = safeName(child.name)
                 if (name.isEmpty()) continue // 忽略无有效名称的条目（避免 File(dest,"") 指回自身）
-                copyDocumentTree(child, File(dest, name))
+                // 跳过「目录自身」：子节点名与当前目标目录同名，视为提供者返回了自身/父节点
+                if (child.isDirectory && name == parentName) continue
+                copyDocumentTree(child, File(dest, name), visited)
             }
         } else {
             val name = safeName(src.name)
