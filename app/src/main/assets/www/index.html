@@ -47,6 +47,44 @@
         [role="toolbar"] { flex-wrap: wrap !important; font-size: 13px !important; }
         input,
         select { font-size: 16px !important; }
+        /* ---- 竖屏易用性增强 ---- */
+        html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        body { font-size: 14px !important; line-height: 1.5 !important; }
+        /* 可点目标不小于拇指舒适区（不强行拉伸密集工具条内的小图标） */
+        button,
+        [role="button"],
+        a[href] { -webkit-tap-highlight-color: transparent; }
+        /* 主操作按钮在竖屏更醒目、更好点 */
+        [class*="btn-primary"],
+        [class*="primary-button"],
+        [class*="primary-action"],
+        [class*="button-primary"] { min-height: 44px !important; }
+        /* 底部 Dock / 快捷栏吸底并留出系统手势安全区，避免被手势条遮挡 */
+        [class*="dock"],
+        [class*="bottom-bar"],
+        [class*="quick-bar"],
+        [class*="status-bar"] {
+          padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+          max-width: 100% !important;
+          overflow-x: auto !important;
+        }
+        /* 窄屏下减少整页左右留白，让内容更充分利用屏幕 */
+        main,
+        [class*="container"],
+        [class*="wrapper"],
+        [class*="content"] { padding-left: 12px !important; padding-right: 12px !important; }
+        /* 表格 / 面板在竖屏内横向滚动而非撑破页面 */
+        [class*="table"],
+        [class*="list"] { max-width: 100% !important; }
+        /* 弹窗 / 抽屉在竖屏贴合可用高度与宽度 */
+        [role="dialog"],
+        [class*="modal"],
+        [class*="drawer"] {
+          max-width: 94vw !important;
+          max-height: 84vh !important;
+        }
+        /* 大标题在窄屏适度缩小，避免换行过多 */
+        h1, h2, [class*="title"] { letter-spacing: 0.2px !important; }
       }
     </style>
   </head>

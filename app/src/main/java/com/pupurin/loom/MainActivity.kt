@@ -82,7 +82,35 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private val PICKER_METHODS = setOf("pickFiles", "pickAudioFiles", "importImages", "pluginFsUploadImage", "pickImageFile", "installExportedGame", "pickDirectory")
-        const val VERSION = "0.4.6"
+        const val VERSION = "0.4.9"
+
+        /** 返回手势交给前端接管。优先用 __loomOnNativeBack 钩子；否则点击可见的返回/关闭按钮；
+         * 只有前端确认无返回可走时才返回 'exit'，原生据此退出 App。 */
+        private const val NATIVE_BACK_JS = """(function(){
+try{
+  if (typeof window.__loomOnNativeBack === 'function') {
+    var res = window.__loomOnNativeBack();
+    if (res === true) return 'handled';
+    if (res === false) return 'exit';
+  }
+  var nodes = document.querySelectorAll('button,[role="button"]');
+  for (var i=0;i<nodes.length;i++){
+    var el = nodes[i];
+    if (el.offsetParent === null) continue;
+    var rect = el.getBoundingClientRect();
+    if (rect.width < 20 || rect.height < 20) continue;
+    var txt = (el.textContent||'').trim();
+    var aria = el.getAttribute('aria-label')||'';
+    var cls = ' ' + (el.className||'') + ' ';
+    var html = el.innerHTML || '';
+    var isBack = /(返回|Back|back)/.test(txt + aria)
+      || /M19 12H5|M10 19l-7-7|M15 18l-6-6/.test(html)
+      || /(^|\s)(back|nav-icon|chevron-left|arrow)(\s|$)/i.test(cls);
+    if (isBack) { el.click(); return 'handled'; }
+  }
+  return 'exit';
+}catch(e){ return 'exit'; }
+})()"""
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -212,19 +240,65 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 将 SAF 目录树递归拷贝到 cacheDir/picked/<uuid>，返回本地绝对路径。 */
+    /** 将用户选择的 SAF 目录拷贝到 cacheDir/picked/<名字>，返回本地绝对路径。 */
     private fun copyTreeToCache(uri: Uri): String {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Exception) { /* 持久化读权限可选 */ }
-        val src = DocumentFile.fromTreeUri(this, uri)
-            ?: throw Exception("无法访问所选目录")
+
         val destRoot = File(cacheDir, "picked")
         if (!destRoot.exists()) destRoot.mkdirs()
-        val dest = File(destRoot, "pick-" + UUID.randomUUID().toString())
+
+        // 优先解析为真实文件系统路径并用 File.copyRecursively 拷贝。
+        // 如此可彻底绕开 SAF/DocumentsProvider 的 isDirectory 误判——它就是
+        // 让 script.rpy、SourceHanSansLite.ttf 等“文件被误当成目录”，进而
+        // 在读取时抛 EISDIR（打开目录当文件）或在落盘时拼出 X/X 抛 ENOENT 的根源。
+        val real = resolveTreeRealPath(uri)
+        val destName = sanitizeDirName(real?.name?.takeIf { it.isNotBlank() } ?: "project")
+        val dest = uniqueCacheDir(destRoot, destName)
         dest.mkdirs()
+
+        if (real != null && real.isDirectory) {
+            real.copyRecursively(dest, overwrite = false)
+            return dest.absolutePath
+        }
+
+        // 回退：无法得到真实路径（如云盘等第三方提供者）时，用 DocumentFile 递归拷贝（含按 uri 去重防护）
+        val src = DocumentFile.fromTreeUri(this, uri) ?: throw Exception("无法访问所选目录")
         copyDocumentTree(src, dest)
         return dest.absolutePath
+    }
+
+    /** 把 SAF 目录 tree URI 解析为真实文件系统路径；仅支持本地主存储("primary:...")，否则返回 null。 */
+    private fun resolveTreeRealPath(uri: Uri): File? {
+        return try {
+            val treeId = android.provider.DocumentsContract.getTreeDocumentId(uri) ?: return null
+            if (treeId.startsWith("primary:")) {
+                val rel = treeId.removePrefix("primary:").trim('/')
+                File(android.os.Environment.getExternalStorageDirectory(), rel)
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 目录名去非法字符，返回安全名称（可能为空则用 "project"）。 */
+    private fun sanitizeDirName(raw: String): String {
+        val s = raw.trim().replace(
+            Regex("""[\\/:*?"<>|\u0000-\u001f]"""), "_"
+        ).ifEmpty { "project" }
+        return s.take(80)
+    }
+
+    /** 目标名已存在时追加序号，避免同次导入冲突。 */
+    private fun uniqueCacheDir(root: File, base: String): File {
+        var f = File(root, base)
+        var n = 1
+        while (f.exists()) {
+            f = File(root, "${base}_$n")
+            n++
+        }
+        return f
     }
 
     private fun copyDocumentTree(
@@ -810,10 +884,19 @@ class MainActivity : ComponentActivity() {
     // ---- 返回键 / 小窗(PiP) / 全屏 ----
 
     override fun onBackPressed() {
+        // 优先 WebView 自身历史后退
         if (webView.canGoBack()) {
             webView.goBack()
-        } else {
-            super.onBackPressed()
+            return
+        }
+        // 渲染层是单页应用（内存路由，不产生浏览器历史），故 canGoBack 恒为 false。
+        // 返回手势改由前端接管：在项目编辑器等子界面内返回上一屏，只有在前端明确
+        // 表示“已在根界面/无返回可走”时才退出 App，避免一返回就直接退出。
+        webView.evaluateJavascript(NATIVE_BACK_JS) { result ->
+            val r = result?.trim()?.trim('"')
+            if (r != "handled") {
+                super.onBackPressed()
+            }
         }
     }
 

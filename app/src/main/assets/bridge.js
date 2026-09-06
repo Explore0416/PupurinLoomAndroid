@@ -8,6 +8,10 @@
   var callbacks = {}
   var cid = 1
 
+  // 原生“返回手势”接管钩子：渲染层若注册了该函数，则原生返回时优先调用它。
+  // 约定返回 true=已处理返回（原生不再退出）；返回 false=请原生退出。
+  window.__loomOnNativeBack = null
+
   function call(method, args) {
     return new Promise(function (resolve, reject) {
       var id = String(cid++)
@@ -194,7 +198,9 @@
     scanNonAsciiFiles: function (projectPath) { return call('scanNonAsciiFiles', [projectPath]) },
     applyNonAsciiRename: function (projectPath, items) { return call('applyNonAsciiRename', [projectPath, items]) },
     listRpyFiles: function (projectPath) { return call('listRpyFiles', [projectPath]) },
-    saveRpyFile: function (projectPath, subPath, content) { return call('saveRpyFile', [projectPath, subPath, content]) }
+    saveRpyFile: function (projectPath, subPath, content) { return call('saveRpyFile', [projectPath, subPath, content]) },
+    // 注册原生返回手势处理：fn() 返回 true=已处理返回，false=请原生退出应用
+    setNativeBackHandler: function (fn) { window.__loomOnNativeBack = typeof fn === 'function' ? fn : null; return true }
   }
 
   window.pupurin = api
