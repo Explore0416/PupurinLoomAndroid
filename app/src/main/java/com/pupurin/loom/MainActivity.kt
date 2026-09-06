@@ -594,7 +594,7 @@ class MainActivity : ComponentActivity() {
      * { configured, error, hasUpdate, current, latest, url, pageUrl, source, notes }。
      * 在后台线程（executor）上调用，可安全做阻塞网络请求。
      */
-    private fun checkUpdateNow(): Map<String, Any> {
+    private fun checkUpdateNow(): Map<String, Any?> {
         return try {
             val resp = httpGet(GITHUB_LATEST_API, "application/vnd.github+json")
             val obj = JsonParser.parseString(resp).asJsonObject
