@@ -95,26 +95,29 @@ class CloudPackager(private val context: Context) {
             logs.add("上传成功，作业 ID：$jobId")
             logs.add("服务器开始打包……")
 
-            // 3) 轮询（对瞬时网络错误自动重试，避免 DNS/隧道抖动被误判为打包失败）
+            // 3) 轮询（对瞬时网络/DNS 错误自动重试）。
+            // 关键点：客户端网络抖动绝不能判「打包失败」——打包在服务器后台照常进行，
+            // 客户端只要持续重试即可；只有服务器明确返回 error 或超过硬超时才结束。
             val deadline = System.currentTimeMillis() + MAX_POLL_MS
-            val maxPollFailures = 8
-            var pollFailures = 0
+            var lastGlitchLoggedAt = 0L
             while (true) {
                 val status = try {
                     query(base, jobId)
                 } catch (e: Exception) {
-                    pollFailures++
-                    if (pollFailures >= maxPollFailures || System.currentTimeMillis() > deadline) {
+                    if (System.currentTimeMillis() > deadline) {
                         return mapOf(
-                            "logs" to (logs + "错误：连接打包服务器失败：${e.message}"),
+                            "logs" to (logs + "错误：连接打包服务器持续失败（30 分钟）：${e.message}"),
                             "error" to (e.message ?: "连接打包服务器失败")
                         )
                     }
-                    logs.add("网络抖动（${e.message}），$pollFailures/$maxPollFailures 次，正在重试……")
+                    // 网络/DNS 抖动：重试而非判死；日志节流（每 15 秒最多记一条），避免刷屏
+                    if (System.currentTimeMillis() - lastGlitchLoggedAt > 15000L) {
+                        logs.add("网络抖动（${e.message}），正在重试，服务器仍在后台打包……")
+                        lastGlitchLoggedAt = System.currentTimeMillis()
+                    }
                     Thread.sleep(POLL_INTERVAL_MS)
                     continue
                 }
-                pollFailures = 0
                 // 追加新日志（去重）
                 status.logs.forEach { if (it !in logs) logs.add(it) }
                 when (status.state) {

@@ -12,8 +12,8 @@ android {
         applicationId = "com.pupurin.loom"
         minSdk = 24
         targetSdk = 34
-        versionCode = 44
-        versionName = "0.4.4"
+        versionCode = 45
+        versionName = "0.4.5"
         setProperty("archivesBaseName", "PupurinLoom-$versionName")
     }
 

@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private val PICKER_METHODS = setOf("pickFiles", "pickAudioFiles", "importImages", "pluginFsUploadImage", "pickImageFile", "installExportedGame", "pickDirectory")
-        const val VERSION = "0.4.4"
+        const val VERSION = "0.4.5"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
