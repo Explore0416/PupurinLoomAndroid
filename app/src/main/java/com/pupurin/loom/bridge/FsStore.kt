@@ -19,9 +19,11 @@ class FsStore(private val context: Context) {
     private fun resolve(projectPath: String, sub: String): File {
         val base = File(projectPath, "game")
         if (sub.isEmpty()) return base
-        // 容错：合并 <名字>/<同名>（如 font/font.ttf）这类重复段，避免「找不到文件」的裸 ENOENT
-        val parts = sub.trim('/').split('/').filter { it.isNotEmpty() }
+        var parts = sub.trim('/').split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return base
+        // 容错一：调用方若已带相对 projectRoot 的 game/ 前缀，去掉，避免拼成 game/game/…（base 已含 game）
+        if (parts.first() == "game") parts = parts.drop(1)
+        // 容错二：合并 <名字>/<同名>（如 font/font.ttf）这类连续重复段，避免「找不到文件」的裸 ENOENT
         val collapsed = buildString {
             var last: String? = null
             for (p in parts) {

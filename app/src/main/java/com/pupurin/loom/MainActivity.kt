@@ -232,14 +232,18 @@ class MainActivity : ComponentActivity() {
         dest: File,
         visited: MutableSet<String> = java.util.HashSet()
     ) {
+        // 按 uri 唯一去重：部分 SAF 提供者会把「同一节点」既当普通条目、又当目录/自身重复返回。
+        // 若只在目录分支去重，该节点作为文件已落盘、又以同名目录再出现时，会往“文件里面”再写同名子项，
+        // 造成 `<父级是文件>/<同名>`（如 …/SourceHanSansLite.ttf/SourceHanSansLite.ttf）并因父级非目录而报 ENOENT。
+        // 对文件与目录都登记 uri，一旦同一 uri 再次出现即跳过——同一物理节点只需拷贝一次。
+        if (!visited.add(src.uri.toString())) return
+
         if (src.isDirectory) {
+            // 目标名已被「同名文件」占用时，让文件优先，跳过该伪目录
+            if (dest.isFile) return
             dest.mkdirs()
-            // 环/自引用防护：部分 SAF 提供者会把“根/自身”也作为子节点返回，
-            // 若不拦截会把同一目录无限递归、拷贝成 <名字>/<同名>（如 font/font.ttf）再误报 ENOENT。
-            val srcKey = src.name + "\u0000" + src.uri
-            if (!visited.add(srcKey)) return
             val parentName = dest.name
-            for (child in src.listFiles()) {
+            for (child in src.listFiles() ?: emptyArray()) {
                 val name = safeName(child.name)
                 if (name.isEmpty()) continue // 忽略无有效名称的条目（避免 File(dest,"") 指回自身）
                 // 跳过「目录自身」：子节点名与当前目标目录同名，视为提供者返回了自身/父节点
@@ -249,6 +253,9 @@ class MainActivity : ComponentActivity() {
         } else {
             val name = safeName(src.name)
             if (name.isEmpty()) return
+            // 兜底：若前面把 dest 误建成了空目录（同名目录/文件冲突），清掉它，确保文件落到正确路径
+            if (dest.isDirectory && dest.listFiles()?.isEmpty() == true) dest.delete()
+            dest.mkdirs()
             val out = File(dest, name)
             contentResolver.openInputStream(src.uri)?.use { ins ->
                 out.outputStream().use { outs -> ins.copyTo(outs) }
