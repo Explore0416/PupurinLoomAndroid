@@ -157,25 +157,31 @@ class ProjectStore(private val context: Context) {
     // ---- 导入项目 ----
 
     fun importProject(sourcePath: String): ProjectMeta {
-        val sourceRoot = File(sourcePath).canonicalFile
-        val standardScript = File(sourceRoot, "game/script.rpy")
-        val flatScript = File(sourceRoot, "script.rpy")
-        val layout = when {
-            standardScript.exists() -> "standard"
-            flatScript.exists() -> "flat"
-            else -> throw Exception("路径「$sourcePath」下既没有 game/script.rpy，也没有直接的 script.rpy，不是有效的 Ren'Py 项目目录。")
-        }
+        val start = File(sourcePath).canonicalFile
+        if (!start.isDirectory) throw Exception("路径「$sourcePath」不存在或不是文件夹。")
 
-        val projectName = sourceRoot.name.ifEmpty { "导入的项目" }
+        // 兼容两种选择：
+        //  ① 用户直接选中某个项目的根目录（其下有 game/ 或 script.rpy）；
+        //  ② 用户选中了「包含该项目的父目录 / 唯一子目录」，例如项目的上级文件夹。
+        // 自动定位真正的项目根，避免“任意文件夹都报错”，也不再把项目错命名为临时目录名。
+        val root = locateProjectRoot(start) ?: throw Exception(
+            "所选文件夹中未找到有效的 Ren'Py 项目：\n" +
+                "项目应包含 game/ 目录（内含 .rpy 脚本）或直接的 script.rpy。\n" +
+                "请选择某个具体项目的文件夹（而不是它的上级父目录）。"
+        )
+
+        val projectName = root.name.ifEmpty { "导入的项目" }
         val targetRoot = File(defaultProjectsDir(), projectName)
         if (targetRoot.exists()) throw Exception("项目「$projectName」已存在于应用目录中，请先删除或重命名。")
 
         defaultProjectsDir().mkdirs()
-        if (layout == "flat") {
-            File(targetRoot, "game").mkdirs()
-            sourceRoot.copyRecursively(File(targetRoot, "game"), overwrite = false)
+        if (File(root, "game").isDirectory) {
+            // 标准结构：game/ 已在项目根下，整体复制
+            root.copyRecursively(targetRoot, overwrite = false)
         } else {
-            sourceRoot.copyRecursively(targetRoot, overwrite = false)
+            // flat 结构：把根目录内容放进 game/
+            File(targetRoot, "game").mkdirs()
+            root.copyRecursively(File(targetRoot, "game"), overwrite = false)
         }
 
         val now = System.currentTimeMillis()
@@ -184,6 +190,29 @@ class ProjectStore(private val context: Context) {
         projects.add(project)
         writeStore(projects)
         return project
+    }
+
+    /** 从起始目录开始，向内在“唯一子目录”上最多下钻 4 层，返回遇到的第一个项目根目录。 */
+    private fun locateProjectRoot(start: File): File? {
+        var d = start
+        repeat(4) {
+            if (isProjectRoot(d)) return d
+            val dirs = d.listFiles { f -> f.isDirectory && !f.name.startsWith(".") } ?: emptyArray()
+            if (dirs.size == 1) d = dirs[0] else return null
+        }
+        return null
+    }
+
+    /** 判断目录是否为有效 Ren'Py 项目根：含 game/（内有 .rpy/.rpyc）或直接的 script.rpy。 */
+    private fun isProjectRoot(dir: File): Boolean {
+        val game = File(dir, "game")
+        if (game.isDirectory) {
+            val hasScript = game.listFiles { f ->
+                !f.isDirectory && (f.name.endsWith(".rpy") || f.name.endsWith(".rpyc"))
+            }?.isNotEmpty() == true
+            if (hasScript) return true
+        }
+        return File(dir, "script.rpy").exists()
     }
 
     // ---- 角色 ----

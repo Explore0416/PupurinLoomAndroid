@@ -37,6 +37,8 @@ import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.pupurin.loom.bridge.*
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -80,7 +82,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private val PICKER_METHODS = setOf("pickFiles", "pickAudioFiles", "importImages", "pluginFsUploadImage", "pickImageFile", "installExportedGame", "pickDirectory")
-        const val VERSION = "0.4.5"
+        const val VERSION = "0.4.6"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -388,7 +390,7 @@ class MainActivity : ComponentActivity() {
                 // 设置 / 更新
                 "getSettings" -> loadSettings()
                 "setSetting" -> setSetting(args.strOrThrow(0), args.get(1))
-                "checkUpdate" -> mapOf("configured" to false, "current" to VERSION)
+                "checkUpdate" -> checkUpdateNow()
                 "getCloudServer" -> mapOf("url" to cloudServer(), "official" to CloudPackager.OFFICIAL_SERVER_URL)
                 "setCloudServer" -> { setCloudServerUrl(args.strOrThrow(0)); null }
                 "getCloudServerSettings" -> cloudServerSettings()
@@ -580,6 +582,96 @@ class MainActivity : ComponentActivity() {
         if (v == null) map.remove(key) else map[key] = v
         saveSettings(map)
         return map
+    }
+
+    // ---- 版本检查（GitHub Releases）----
+
+    private val GITHUB_REPO = "Explore0416/PupurinLoomAndroid"
+    private val GITHUB_LATEST_API = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+
+    /**
+     * 查询 GitHub 最新 Release，与本机版本比对后返回前端所需结构：
+     * { configured, error, hasUpdate, current, latest, url, pageUrl, source, notes }。
+     * 在后台线程（executor）上调用，可安全做阻塞网络请求。
+     */
+    private fun checkUpdateNow(): Map<String, Any> {
+        return try {
+            val resp = httpGet(GITHUB_LATEST_API, "application/vnd.github+json")
+            val obj = JsonParser.parseString(resp).asJsonObject
+            val latestRaw = obj.get("tag_name")?.asString ?: throw Exception("无法解析最新版本")
+            val latest = latestRaw.removePrefix("v")
+            val pageUrl = obj.get("html_url")?.asString
+                ?: "https://github.com/$GITHUB_REPO/releases/latest"
+            val notes = obj.get("body")?.asString ?: ""
+            val assets = obj.getAsJsonArray("assets") ?: JsonArray()
+
+            // 优先取 release APK 的直链
+            val apkNames = mutableListOf<String>()
+            val urlByName = HashMap<String, String>()
+            for (a in assets) {
+                val an = a.asJsonObject.get("name")?.asString ?: continue
+                val dl = a.asJsonObject.get("browser_download_url")?.asString ?: ""
+                apkNames.add(an); urlByName[an] = dl
+            }
+            val downloadUrl = apkNames.firstOrNull { it.contains("release", true) && it.endsWith(".apk") }
+                ?: apkNames.firstOrNull { it.endsWith(".apk") }
+                ?: ""
+            val realDownload = if (downloadUrl.isEmpty()) "" else (urlByName[downloadUrl] ?: "")
+
+            val hasUpdate = compareVersions(latest, VERSION) > 0
+            mapOf(
+                "configured" to true,
+                "error" to null,
+                "hasUpdate" to hasUpdate,
+                "current" to VERSION,
+                "latest" to latest,
+                "url" to (if (hasUpdate) realDownload else null),
+                "pageUrl" to pageUrl,
+                "source" to "github",
+                "notes" to (if (hasUpdate) notes.trim() else "")
+            )
+        } catch (e: Exception) {
+            mapOf(
+                "configured" to true,
+                "error" to (e.message ?: "检查更新失败"),
+                "current" to VERSION,
+                "hasUpdate" to false,
+                "latest" to VERSION,
+                "url" to null, "pageUrl" to null, "source" to "github", "notes" to ""
+            )
+        }
+    }
+
+    private fun httpGet(urlStr: String, accept: String): String {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15000
+            readTimeout = 20000
+            setRequestProperty("Accept", accept)
+            setRequestProperty("User-Agent", "PupurinLoom-Android")
+        }
+        return try {
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            if (code !in 200..299) throw Exception("获取最新版本失败 (HTTP $code)")
+            body
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** 简单语义化版本比较：0.4.5 < 0.4.6；返回正数表示 a > b。 */
+    private fun compareVersions(a: String, b: String): Int {
+        val as_ = a.trim().split(".").mapNotNull { it.toIntOrNull() ?: 0 }
+        val bs = b.trim().split(".").mapNotNull { it.toIntOrNull() ?: 0 }
+        val n = maxOf(as_.size, bs.size)
+        for (i in 0 until n) {
+            val x = if (i < as_.size) as_[i] else 0
+            val y = if (i < bs.size) bs[i] else 0
+            if (x != y) return x - y
+        }
+        return 0
     }
 
     // ---- 云端打包 / 运行 ----
